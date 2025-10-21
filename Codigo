@@ -1,0 +1,421 @@
+%%writefile main.cpp
+
+#include <iostream>
+#include <queue>
+#include <stack>
+#include <string>
+#include <vector>
+#include <random>
+#include <ctime>
+#include <iomanip>   // Para setfill y setw
+#include <sstream>   // Para ostringstream
+
+using namespace std;
+
+// Clase para representar un Avión
+class Avion {
+private:
+    string id;
+    int prioridad;  // 1 = emergencia (alta prioridad), 2 = normal
+    stack<string> equipaje;  // Pila de equipaje asociada a este avión
+
+public:
+    // Constructor: genera ID aleatorio por defecto
+    Avion(bool esEmergencia = false) : prioridad(esEmergencia ? 1 : 2) {
+        this->id = generarIdAleatorio();
+    }
+
+    // Constructor con ID manual (para extensiones futuras)
+    Avion(string idManual, bool esEmergencia = false) : id(idManual), prioridad(esEmergencia ? 1 : 2) {}
+
+    // Método estático para generar ID aleatorio (formato: AB1234, con 4 dígitos)
+    static string generarIdAleatorio() {
+        static const string letras = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        static mt19937 gen(static_cast<unsigned int>(time(nullptr)));  // Seed con time
+        uniform_int_distribution<> distLetra(0, static_cast<int>(letras.size()) - 1);
+        uniform_int_distribution<> distNumero(0, 9999);
+
+        string codigo;
+        codigo += letras[distLetra(gen)];
+        codigo += letras[distLetra(gen)];
+
+        ostringstream oss;
+        oss << setfill('0') << setw(4) << distNumero(gen);
+        codigo += oss.str();
+
+        return codigo;
+    }
+
+    // Método estático para generar ID de maleta aleatorio (formato: Maleta_(ID avion)_(ID al azar))
+    static string generarIdMaletaAleatorio(const string& idAvion) {
+        return "Maleta_" + idAvion + "_" + generarIdAleatorio();
+    }
+
+    // Getters
+    string getId() const { return id; }
+    int getPrioridad() const { return prioridad; }
+    // Sobrecarga para const-correctness
+    stack<string>& getEquipaje() { return equipaje; }  // Para modificar
+    const stack<string>& getEquipaje() const { return equipaje; }  // Para acceso const
+
+    // Método para mostrar info
+    string toString() const {
+        return "Avion{" + id + ", prio=" + to_string(prioridad) + "}";
+    }
+};
+
+// Comparator para priority_queue: max-heap donde menor prioridad numérica = mayor urgencia (emergencia primero)
+struct Comparator {
+    bool operator()(const Avion& a, const Avion& b) {
+        return a.getPrioridad() > b.getPrioridad();  // Si a tiene prio mayor que b, a es "menor" en heap (sale después)
+    }
+};
+
+// Clase principal del Simulador (OOP)
+class SimuladorAeropuerto {
+private:
+    queue<Avion> cola_despegue;                          // Cola FIFO para despegues
+    priority_queue<Avion, vector<Avion>, Comparator> pq_aterrizaje;  // Priority Queue para aterrizajes (emergencia primero)
+    vector<Avion> aviones_aterrizados;                   // Vector para aviones que han aterrizado (permite acceso directo)
+
+    // Método privado para mostrar el estado de una cola temporal
+    void mostrarCola(queue<Avion> temp) const {
+        if (temp.empty()) {
+            cout << "Vacía";
+            return;
+        }
+        bool primero = true;
+        while (!temp.empty()) {
+            if (!primero) cout << " ";
+            cout << temp.front().getId();
+            primero = false;
+            temp.pop();
+        }
+    }
+
+    // Método privado para mostrar priority_queue temporal (de mayor a menor prioridad)
+    void mostrarPQ(priority_queue<Avion, vector<Avion>, Comparator> temp) const {
+        if (temp.empty()) {
+            cout << "Vacía";
+            return;
+        }
+        // Copiar a vector y mostrar en orden de prioridad (emergencias primero)
+        vector<Avion> vec;
+        while (!temp.empty()) {
+            vec.push_back(temp.top());
+            temp.pop();
+        }
+        // vec[0] es la de menor prio (emergencia), vec.back() la de mayor prio
+        bool primero = true;
+        for (size_t i = 0; i < vec.size(); ++i) {
+            if (!primero) cout << " ";
+            cout << "(" << vec[i].getPrioridad() << ", " << vec[i].getId() << ")";
+            primero = false;
+        }
+    }
+
+    // Método privado para mostrar pila temporal
+    void mostrarPila(stack<string> temp) const {
+        if (temp.empty()) {
+            cout << "Vacía";
+            return;
+        }
+        bool primero = true;
+        while (!temp.empty()) {
+            if (!primero) cout << " ";
+            cout << temp.top();
+            primero = false;
+            temp.pop();
+        }
+    }
+
+public:
+    // Constructor
+    SimuladorAeropuerto() {}
+
+    // Agregar avión normal a aterrizaje
+    void agregarAvionNormalAterrizaje() {
+         int n;
+         cout << "Ingresa el número de aviones a aterrizar: ";
+         cin >> n;
+         cin.ignore();  // Limpiar buffer
+         if (n <= 0) {
+             cout << "Número inválido. No se agregaron aviones." << endl;
+             return;
+         }
+         for (int i = 0; i < n; ++i) {
+             Avion avion(false);  // Normal, prio=2
+             pq_aterrizaje.push(avion);
+             cout << "Avión " << avion.getId() << " agregado a cola de aterrizaje." << endl;
+         }
+         cout << "Han sido agregados " << n << " aviones a aterrizar." << endl;
+     }
+
+    // Agregar avión de emergencia a aterrizaje
+    void agregarAvionEmergenciaAterrizaje() {
+            int n;
+            cout << "Ingresa el número de aviones de emergencia a aterrizar: ";
+            cin >> n;
+            cin.ignore();  // Limpiar buffer
+            if (n <= 0) {
+                cout << "Número inválido. No se agregaron aviones." << endl;
+                return;
+            }
+            for (int i = 0; i < n; ++i) {
+                Avion avion(true);  // Emergencia, prio=1
+                pq_aterrizaje.push(avion);
+                cout << "Avión " << avion.getId() << " agregado a cola de aterrizaje con prioridad." << endl;
+            }
+            cout << "Han sido agregados " << n << " aviones de emergencia a aterrizar." << endl;
+        }
+
+    // Procesar siguiente aterrizaje (prioridad primero)
+    void procesarAterrizaje() {
+        if (!pq_aterrizaje.empty()) {
+            Avion siguiente = pq_aterrizaje.top();
+            pq_aterrizaje.pop();
+            aviones_aterrizados.push_back(siguiente);  // Agregar a vector de aterrizados
+            cout << "Aterrizando avión: " << siguiente.getId()
+                 << " (prioridad: " << siguiente.getPrioridad() << ")" << endl;
+        } else {
+            cout << "No hay aviones esperando aterrizar." << endl;
+        };
+    };
+
+    // Agregar avión a despegue
+     void agregarAvionDespegue() {
+         int n;
+         cout << "Ingresa el número de aviones a agregar a despegue: ";
+         cin >> n;
+         cin.ignore();  // Limpiar buffer
+         if (n <= 0) {
+             cout << "Número inválido. No se agregaron aviones." << endl;
+             return;
+         }
+         for (int i = 0; i < n; ++i) {
+             Avion avion(false);  // Siempre normal para despegue
+             cola_despegue.push(avion);
+             cout << "Avión " << avion.getId() << " agregado a cola de despegue." << endl;
+         }
+         cout << "Se han agregados " << n << " aviones a despegue." << endl;
+     }
+
+
+    // Procesar siguiente despegue
+    void procesarDespegue() {
+        if (!cola_despegue.empty()) {
+            Avion avion = cola_despegue.front();
+            cola_despegue.pop();
+            cout << "Despegando avión: " << avion.getId() << endl;
+        } else {
+            cout << "No hay aviones esperando despegar." << endl;
+        };
+    };
+
+    // Agregar equipaje (solo si hay aviones en cola de despegue)
+    void agregarEquipaje() {
+        if (cola_despegue.empty()) {
+            cout << "No hay aviones en cola de despegue. No se puede agregar equipaje." << endl;
+            return;
+        }
+        int n;
+        cout << "Ingresa el número de maletas a agregar: ";
+        cin >> n;
+        cin.ignore();  // Limpiar buffer
+        if (n <= 0) {
+            cout << "Número inválido. No se agregaron maletas." << endl;
+            return;
+        }
+        Avion& avion = cola_despegue.front();  // Referencia al avión del frente (sin remover)
+        for (int i = 0; i < n; ++i) {
+            string idMaleta = Avion::generarIdMaletaAleatorio(avion.getId());
+            avion.getEquipaje().push(idMaleta);
+            cout << "Maleta " << idMaleta << " agregada al avión " << avion.getId() << "." << endl;
+        }
+        cout << "Se han agregado " << n << " maletas al avión " << avion.getId() << "." << endl;
+    };
+
+    // Retirar equipaje (solo de aviones aterrizados, una maleta a la vez)
+    void retirarEquipaje() {
+        if (aviones_aterrizados.empty()) {
+            cout << "No hay aviones aterrizados. No se puede retirar equipaje." << endl;
+            return;
+        }
+        // Mostrar aviones aterrizados con equipaje
+        vector<size_t> opciones;  // Índices válidos
+        cout << "Aviones aterrizados con equipaje:" << endl;
+        for (size_t i = 0; i < aviones_aterrizados.size(); ++i) {
+            if (!aviones_aterrizados[i].getEquipaje().empty()) {
+                cout << (i + 1) << ". Avión " << aviones_aterrizados[i].getId() << " (equipaje: ";
+                stack<string> tempEquip = aviones_aterrizados[i].getEquipaje();
+                mostrarPila(tempEquip);
+                cout << ")" << endl;
+                opciones.push_back(i);
+            }
+        }
+        if (opciones.empty()) {
+            cout << "No hay aviones aterrizados con equipaje." << endl;
+            return;
+        }
+        cout << "Elige el número del avión para retirar una maleta: ";
+        int eleccion;
+        cin >> eleccion;
+        cin.ignore();
+        if (eleccion < 1 || eleccion > static_cast<int>(opciones.size())) {
+            cout << "Elección inválida." << endl;
+            return;
+        }
+        size_t idx = opciones[eleccion - 1];
+        if (!aviones_aterrizados[idx].getEquipaje().empty()) {
+            string maleta = aviones_aterrizados[idx].getEquipaje().top();
+            aviones_aterrizados[idx].getEquipaje().pop();
+            cout << "Retirando maleta " << maleta << " del avión " << aviones_aterrizados[idx].getId() << "." << endl;
+        } else {
+            cout << "El avión no tiene equipaje." << endl;
+        }
+    };
+
+    // Preparar avión aterrizado para despegue (solo si equipaje vacío, múltiples al mismo tiempo)
+    void prepararParaDespegue() {
+        if (aviones_aterrizados.empty()) {
+            cout << "No hay aviones aterrizados." << endl;
+            return;
+        }
+        // Mostrar aviones aterrizados sin equipaje
+        vector<size_t> candidatos;  // Índices válidos
+        cout << "Aviones aterrizados listos para despegue (equipaje vacío):" << endl;
+        for (size_t i = 0; i < aviones_aterrizados.size(); ++i) {
+            if (aviones_aterrizados[i].getEquipaje().empty()) {
+                cout << (i + 1) << ". Avión " << aviones_aterrizados[i].getId() << endl;
+                candidatos.push_back(i);
+            }
+        }
+        if (candidatos.empty()) {
+            cout << "No hay aviones aterrizados sin equipaje." << endl;
+            return;
+        }
+        cout << "Ingresa el número de aviones a preparar para despegue (máximo " << candidatos.size() << "): ";
+        int n;
+        cin >> n;
+        cin.ignore();
+        if (n <= 0 || n > static_cast<int>(candidatos.size())) {
+            cout << "Número inválido." << endl;
+            return;
+        }
+        // Preparar los primeros n candidatos
+        for (int i = 0; i < n; ++i) {
+            size_t idx = candidatos[i];
+            Avion avionElegido = aviones_aterrizados[idx];
+            cola_despegue.push(avionElegido);
+            cout << "Avión " << avionElegido.getId() << " preparado para despegue." << endl;
+        }
+        // Remover los preparados del vector (en orden inverso para no invalidar índices)
+        for (int i = n - 1; i >= 0; --i) {
+            size_t idx = candidatos[i];
+            aviones_aterrizados.erase(aviones_aterrizados.begin() + idx);
+        }
+        cout << "Se han preparado " << n << " aviones para despegue." << endl;
+    };
+
+    // Mostrar estado del aeropuerto
+    void mostrarEstado() const {
+        cout << "\n--- ESTADO DEL AEROPUERTO ---" << endl;
+
+        // Cola de aterrizaje (PQ)
+        cout << "Cola de aterrizaje (de mayor a menor prio): ";
+        priority_queue<Avion, vector<Avion>, Comparator> tempPQ = pq_aterrizaje;
+        mostrarPQ(tempPQ);
+        cout << endl;
+
+        // Cola de despegue
+        cout << "Cola de despegue (frente a atrás): ";
+        queue<Avion> tempQueue = cola_despegue;
+        mostrarCola(tempQueue);
+        cout << endl;
+
+        // Aviones aterrizados
+        cout << "Aviones aterrizados: ";
+        if (aviones_aterrizados.empty()) {
+            cout << "Vacía" << endl;
+        } else {
+            for (size_t i = 0; i < aviones_aterrizados.size(); ++i) {
+                if (i > 0) cout << " ";
+                cout << aviones_aterrizados[i].getId() << " (equipaje: ";
+                stack<string> tempEquip = aviones_aterrizados[i].getEquipaje();  // Ahora usa la versión const
+                mostrarPila(tempEquip);
+                cout << ")";
+            }
+            cout << endl;
+        }
+    };
+
+  // Método principal para ejecutar el menú interactivo
+  void run() {
+      cout << "SIMULADOR DE AEROPUERTO" << endl;
+      while (true) {
+          cout << "\n--- MENÚ ---" << endl;
+          cout << "1. Agregar avión a cola de aterrizaje" << endl;
+          cout << "2. Agregar avión de emergencia a aterrizaje" << endl;
+          cout << "3. Procesar siguiente aterrizaje" << endl;
+          cout << "4. Agregar avión a cola de despegue" << endl;
+          cout << "5. Procesar siguiente despegue" << endl;
+          cout << "6. Agregar equipaje a avión en despegue" << endl;
+          cout << "7. Retirar equipaje de avión aterrizado" << endl;
+          cout << "8. Mostrar estado del aeropuerto" << endl;
+          cout << "9. Preparar avión aterrizado para despegue" << endl;
+          cout << "0. Salir" << endl;
+          cout << "Elige una opción: ";
+          int opcion;
+          if (cin >> opcion) {
+              cin.ignore(1000, '\n');  // Limpiar buffer después de leer el número
+              if (opcion == 0) {
+                  cout << "Saliendo del simulador. ¡Gracias!" << endl;
+                  break;  // Salir del bucle while
+              }
+              switch (opcion) {
+                  case 1:
+                      agregarAvionNormalAterrizaje();
+                      break;
+                  case 2:
+                      agregarAvionEmergenciaAterrizaje();
+                      break;
+                  case 3:
+                      procesarAterrizaje();
+                      break;
+                  case 4:
+                      agregarAvionDespegue();
+                      break;
+                  case 5:
+                      procesarDespegue();
+                      break;
+                  case 6:
+                      agregarEquipaje();
+                      break;
+                  case 7:
+                      retirarEquipaje();
+                      break;
+                  case 8:
+                      mostrarEstado();
+                      break;
+                  case 9:
+                      prepararParaDespegue();
+                      break;
+                  default:
+                      cout << "Opción inválida. Intenta de nuevo." << endl;
+              }
+          } else {
+              cin.clear();  // Limpiar estado de error de cin
+              cin.ignore(1000, '\n');  // Ignorar el resto de la línea
+              cout << "Entrada inválida. Por favor, ingresa un número válido." << endl;
+              // El bucle continúa, reimprimiendo el menú
+          }
+      }
+  }
+};
+
+// Función main: La que ejecuta el codigo
+int main() {
+    SimuladorAeropuerto simulador;
+    simulador.run();
+    return 0;
+};
